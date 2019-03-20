@@ -1,11 +1,8 @@
 #include "memory_debugger.h"
 
 #include <windows.h>
+#include <ws2tcpip.h>
 #include <string.h>
-
-// DEBUG
-#include <stdio.h>
-// END
 
 #define MEMDBG_LABEL_SIZE 32
 #define MEMDBG_DEFAULT_PORT 2401
@@ -16,6 +13,7 @@ static int memdbg_port_ = -1;
 static struct sockaddr_in memdbg_remote_host_;
 
 static int memdbg_ready = 0;
+static int memdbg_use_tcp_ = 0;
 
 static unsigned short memdbg_sequence = 0;
 
@@ -33,7 +31,7 @@ void memdbg_send();
 
 void memdbg_reset() {
     if (memdbg_ready == 0) {
-        memdbg_init(MEMDBG_DEFAULT_PORT);
+        memdbg_init_tcp(MEMDBG_DEFAULT_PORT);
     }
     EnterCriticalSection(&memdbg_lock_);
     memdbg_sequence = 0;
@@ -42,12 +40,33 @@ void memdbg_reset() {
     LeaveCriticalSection(&memdbg_lock_);
 }
 
-void memdbg_init(int port) {
+void memdbg_init_tcp(int port) {
     if (memdbg_ready == 0) {
-// DEBUG
-        printf("size of data block %d\n", sizeof(memdbg_alloc_data_));
-// END
+        memdbg_port_ = port;
+        memset(&memdbg_remote_host_, 0, sizeof(memdbg_remote_host_));
+        memdbg_sock_ = -1;
+        InitializeCriticalSection(&memdbg_lock_);
 
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return;
+
+        memdbg_sock_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (memdbg_sock_ == INVALID_SOCKET) return;
+
+        memdbg_remote_host_.sin_family = AF_INET;
+        memdbg_remote_host_.sin_port = htons(port);
+        memdbg_remote_host_.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+        int rv = connect(memdbg_sock_, (SOCKADDR *)&memdbg_remote_host_, sizeof(memdbg_remote_host_));
+        if (rv == SOCKET_ERROR) return;
+
+        memdbg_use_tcp_ = 1;
+        memdbg_ready = 1;
+    }
+}
+
+void memdbg_init_udp(int port) {
+    if (memdbg_ready == 0) {
         memdbg_port_ = port;
         memset(&memdbg_remote_host_, 0, sizeof(memdbg_remote_host_));
         memdbg_sock_ = -1;
@@ -62,13 +81,14 @@ void memdbg_init(int port) {
         memdbg_remote_host_.sin_family = AF_INET;
         memdbg_remote_host_.sin_port = htons(port);
         memdbg_remote_host_.sin_addr.s_addr = inet_addr("127.0.0.1");
+        memdbg_use_tcp_ = 0;
         memdbg_ready = 1;
     }
 }
 
 void memdbg_allocate(const char * label, void * address, unsigned int size) {
     if (memdbg_ready == 0) {
-        memdbg_init(MEMDBG_DEFAULT_PORT);
+        memdbg_init_tcp(MEMDBG_DEFAULT_PORT);
     }
     EnterCriticalSection(&memdbg_lock_);
     memdbg_alloc_data_.type = 'a';
@@ -81,7 +101,7 @@ void memdbg_allocate(const char * label, void * address, unsigned int size) {
 
 void memdbg_release(const char * label, void * address, unsigned int size) {
     if (memdbg_ready == 0) {
-        memdbg_init(MEMDBG_DEFAULT_PORT);
+        memdbg_init_tcp(MEMDBG_DEFAULT_PORT);
     }
     EnterCriticalSection(&memdbg_lock_);
     memdbg_alloc_data_.type = 'r';
@@ -94,15 +114,23 @@ void memdbg_release(const char * label, void * address, unsigned int size) {
 
 void memdbg_send() {
     memdbg_alloc_data_.sequence = memdbg_sequence;
-    sendto(
-        memdbg_sock_,
-        (const char *)&memdbg_alloc_data_,
-        sizeof(memdbg_alloc_data_),
-        0,
-        (SOCKADDR *)&memdbg_remote_host_,
-        sizeof(memdbg_remote_host_)
-    );
+    if (memdbg_use_tcp_) {
+        send(
+            memdbg_sock_,
+            (const char *)&memdbg_alloc_data_,
+            sizeof(memdbg_alloc_data_),
+            0
+        );
+    }
+    else {
+        sendto(
+            memdbg_sock_,
+            (const char *)&memdbg_alloc_data_,
+            sizeof(memdbg_alloc_data_),
+            0,
+            (SOCKADDR *)&memdbg_remote_host_,
+            sizeof(memdbg_remote_host_)
+        );
+    }
     ++memdbg_sequence;
-    // DEBUG
-    printf("Sequence is now %04x\n", memdbg_sequence);
 }

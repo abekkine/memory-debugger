@@ -3,11 +3,15 @@
 
 #include <vector>
 
+#include "SocketInterface.h"
+
+#include "SimpleOptions.hpp"
 #include "UdpSocket.hpp"
+#include "TcpServerSocket.hpp"
+
+SocketInterface * debugSocket = 0;
 
 static bool debug_alloc = false;
-
-UdpSocket debugSocket;
 
 #pragma pack(push, 1)
 struct MemData {
@@ -20,10 +24,10 @@ struct MemData {
 
 struct MemoryBlock {
     MemoryBlock(const std::string & label, unsigned int s, unsigned int e)
-    : label(label)
-    , start(s)
-    , end(e)
-    , count(1)
+        : label(label)
+        , start(s)
+        , end(e)
+        , count(1)
     {}
     std::string label;
     unsigned int start;
@@ -225,13 +229,18 @@ void key(unsigned char key, int x, int y) {
 
 void idle() {
     MemData data;
-    if (debugSocket.Read(&data, sizeof(MemData)) > 0) {
-        if (last_sequence_ + 1 != data.sequence) {
-            printf("Missing package (%04x)\n", data.sequence);
+    try {
+        if (debugSocket->Read(&data, sizeof(MemData)) > 0) {
+            if (last_sequence_ + 1 != data.sequence) {
+                printf("Missing package (%04x)\n", data.sequence);
+            }
+            last_sequence_ = data.sequence;
+            // printf("%s %c\n", data.label, data.type);
+            update_memory_map(data);
         }
-        last_sequence_ = data.sequence;
-        // printf("%s %c\n", data.label, data.type);
-        update_memory_map(data);
+    }
+    catch (std::string & eMsg) {
+        printf("Error: %s\n", eMsg.c_str());
     }
 }
 
@@ -245,16 +254,31 @@ void reshape(int w, int h) {
 
 int main(int argc, char** argv)
 {
-    if (argc == 2) {
-        if (!strcmp(argv[1], "-d")) {
-            debug_alloc = true;
-        }
+    SimpleOptions opts(argc, argv);
+    bool use_udp = true;
+    if (opts.hasOption("-d")) {
+        debug_alloc = true;
+    }
+    if (opts.hasOption("-tcp")) {
+        use_udp = false;
     }
 
-    // DEBUG
-    printf("size of data block %d\n", sizeof(MemData));
-    // END
-    debugSocket.Init(2401);
+    if (use_udp) {
+        debugSocket = new UdpSocket();
+    }
+    else {
+        debugSocket = new TcpServerSocket();
+    }
+
+    puts("Initializing socket...");
+    try {
+        debugSocket->Init(2401);
+    }
+    catch (std::string eMsg) {
+        printf("ERROR: %s\n", eMsg.c_str());
+        exit(1);
+    }
+    puts("DONE");
 
     glutInit(&argc, argv);
 

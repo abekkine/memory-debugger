@@ -5,7 +5,9 @@
 
 #include <winsock2.h>
 
-class UdpSocket {
+#include "SocketInterface.h"
+
+class UdpSocket : public SocketInterface {
 public:
     UdpSocket() {
 
@@ -19,26 +21,26 @@ public:
         int rxBytes = -1;
 
         rxBytes = recvfrom(
-            sock_,
-            (char *)data,
-            size,
-            0,
-            (struct sockaddr *)&remoteAddr,
-            &slen
-        );
+                      sock_,
+                      (char *)data,
+                      size,
+                      0,
+                      (struct sockaddr *)&remoteAddr,
+                      &slen
+                  );
 
         return rxBytes;
     }
     int Write(void * data, int size) {
         int txBytes = -1;
         int retval = sendto(
-            sock_,
-            (char *)data,
-            size,
-            0,
-            (SOCKADDR *)&remote_host_,
-            sizeof(remote_host_)
-        );
+                         sock_,
+                         (char *)data,
+                         size,
+                         0,
+                         (SOCKADDR *)&remote_host_,
+                         sizeof(remote_host_)
+                     );
         if (retval != SOCKET_ERROR) {
             txBytes = retval;
         }

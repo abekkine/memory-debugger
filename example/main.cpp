@@ -4,6 +4,8 @@ extern "C" {
 
 #include <iostream>
 
+#include "SimpleOptions.hpp"
+
 #define USE_HEAP
 
 char input = 0;
@@ -11,16 +13,16 @@ char input = 0;
 class Test1 {
 public:
     Test1() {
-	std::cout << "Test1 "; 
-	std::cin >> input;
+        std::cout << "Test1 ";
+        std::cin >> input;
         memdbg_allocate("Test1", this, sizeof(*this));
 
         Defaults();
     }
 
     ~Test1() {
-	std::cout << "~Test1 ";
-	std::cin >> input;
+        std::cout << "~Test1 ";
+        std::cin >> input;
         memdbg_release("Test1", this, sizeof(*this));
     }
 
@@ -48,13 +50,13 @@ private:
     };
 public:
     Test2() {
-	std::cout << "Test2 ";
-	std::cin >> input;
+        std::cout << "Test2 ";
+        std::cin >> input;
         memdbg_allocate("Test2", this, sizeof(*this));
     }
     ~Test2() {
-	std::cout << "~Test2 ";
-	std::cin >> input;
+        std::cout << "~Test2 ";
+        std::cin >> input;
         memdbg_release("Test2", this, sizeof(*this));
     }
 
@@ -66,8 +68,8 @@ private:
 class Test3 {
 public:
     Test3() {
-	std::cout << "Test3 ";
-	std::cin >> input;
+        std::cout << "Test3 ";
+        std::cin >> input;
         memdbg_allocate("Test3", this, sizeof(*this));
 #ifdef USE_HEAP
         t1 = new Test1();
@@ -76,11 +78,11 @@ public:
 #endif
     }
     ~Test3() {
-	std::cout << "~Test3 ";
+        std::cout << "~Test3 ";
         delete t1;
         delete [] t2;
         delete [] t3;
-	std::cin >> input;
+        std::cin >> input;
         memdbg_release("Test3", this, sizeof(*this));
     }
 private:
@@ -96,19 +98,34 @@ private:
 
 };
 
-int main() {
+int main(int argc, char **argv) {
 
-    memdbg_init(2401);
+    SimpleOptions opts(argc, argv);
+
+    bool use_simple_scenario = false;
+    if (opts.hasOption("-simple")) {
+        use_simple_scenario = true;
+    }
+
+    memdbg_init_tcp(2401);
     memdbg_reset();
 
-    {
+    if (use_simple_scenario) {
+        std::cin >> input;
+        void * data_block = malloc(1280);
+        memdbg_allocate("Data", data_block, 1280);
+        std::cin >> input;
+        free(data_block);
+        memdbg_release("Data", data_block, 1280);
+        std::cin >> input;
+    }
+    else {
         Test1 X;
         Test2 Y;
         Test3 Z;
     }
 
-    std::cout << "END! ";
-    std::cin >> input;
+    std::cout << "Example ends!";
 
     return 0;
 }
