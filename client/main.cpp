@@ -5,6 +5,8 @@
 
 #include "UdpSocket.hpp"
 
+static bool debug_alloc = false;
+
 UdpSocket debugSocket;
 
 #pragma pack(push, 1)
@@ -120,25 +122,25 @@ void update_memory_map(MemData & data) {
     if (data.type == 'a') {
         if (block != 0) {
             ++(block->count);
-#ifdef DEBUG_ALLOC
-            debug_dump("inc", block);
-#endif
+            if (debug_alloc) {
+                debug_dump("inc", block);
+            }
         }
         else {
             block = new MemoryBlock(mem_label, mem_start, mem_end);
             memory_map_.push_back(block);
-#ifdef DEBUG_ALLOC
-            debug_dump("add", block);
-#endif
+            if (debug_alloc) {
+                debug_dump("add", block);
+            }
         }
     }
     else if (data.type == 'r') {
         if (block != 0) {
             --(block->count);
-#ifdef DEBUG_ALLOC
-            debug_dump("dec", block);
-#endif
-            if (block->count < 0) {
+            if (debug_alloc) {
+                debug_dump("dec", block);
+            }
+            if (block->count < 0 && debug_alloc) {
                 debug_dump(mem_label.c_str(), block);
             }
         }
@@ -146,9 +148,9 @@ void update_memory_map(MemData & data) {
             block = new MemoryBlock(mem_label, mem_start, mem_end);
             block->count = -1;
             memory_map_.push_back(block);
-#ifdef DEBUG_ALLOC
-            debug_dump("rem", block);
-#endif
+            if (debug_alloc) {
+                debug_dump("rem", block);
+            }
             debug_dump(mem_label.c_str(), block);
         }
     }
@@ -243,6 +245,12 @@ void reshape(int w, int h) {
 
 int main(int argc, char** argv)
 {
+    if (argc == 2) {
+        if (!strcmp(argv[1], "-d")) {
+            debug_alloc = true;
+        }
+    }
+
     // DEBUG
     printf("size of data block %d\n", sizeof(MemData));
     // END

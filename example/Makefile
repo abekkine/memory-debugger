@@ -18,4 +18,4 @@ all: $(OBJS)
 	$(CXX) $(CXXFLAGS) -c -o $*.o $<
 
 clean:
-	$(RM) $(TARGET) $(OBJS) *~
+	$(RM) $(TARGET) $(OBJS)
