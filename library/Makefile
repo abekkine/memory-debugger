@@ -5,7 +5,7 @@ OBJS = $(SRCS:%.c=%.o)
 CC=gcc
 
 CCFLAGS  = -g
-CCLAGS += -Wall -Wextra -Werror -Wfatal-errors
+CCFLAGS += -Wall -Wextra -Werror -Wfatal-errors
 CCFLAGS += -I .
 
 all: $(TARGET)
