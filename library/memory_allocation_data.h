@@ -4,6 +4,8 @@
 #define MEMDBG_LABEL_SIZE 48
 #define MEMDBG_INFO_SIZE 54
 
+#include <stdint.h>
+
 enum MemDbgTypeEnum {
     md_NONE = 0,
     md_ALLOCATION,
@@ -35,30 +37,30 @@ enum MemDbgSubTypeEnum {
 
 #pragma pack(push, 1)
 struct MemoryDataHeader {
-    unsigned short  sequenceNo; // sequence number
-    unsigned char   typeId;     // allocation / info / periodic
-    unsigned char   subTypeId;  // vary with type
-    unsigned int    threadId;   // source thread identifier
-}; // 12 bytes total
+    uint8_t   typeId;     // allocation / info / periodic
+    uint8_t   subTypeId;  // vary with type
+    uint16_t  sequenceNo; // sequence number
+    uint32_t  threadId;   // source thread identifier
+}; // 8 bytes total
 
 struct MemoryAllocationData {
-    struct MemoryDataHeader header;                     // 8
-    unsigned int            address;                    // 4
-    unsigned int            size;                       // 4
-    char                    label[MEMDBG_LABEL_SIZE];   // 48
+    struct MemoryDataHeader header;         // 8
+    uint32_t  address;                      // 4
+    uint32_t  size;                         // 4
+    char      label[MEMDBG_LABEL_SIZE];     // 48
 };
 
 // send message OR send id/label for periodic
 struct MemoryInfoData {
-    struct MemoryDataHeader header;                     // 8
-    unsigned short id;
-    char                    message[MEMDBG_INFO_SIZE];    // 54
+    struct MemoryDataHeader header;         // 8
+    uint16_t  id;                           // 2
+    char      message[MEMDBG_INFO_SIZE];    // 54
 };
 
 struct MemoryPeriodicData {
-    struct MemoryDataHeader header; // 8
-    unsigned short  id;             // 2
-    unsigned char   value[8];       // 8
+    struct MemoryDataHeader header;         // 8
+    uint16_t id;                            // 2
+    uint8_t  value[8];                      // 8
 };
 #pragma pack(pop)
 

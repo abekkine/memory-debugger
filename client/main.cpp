@@ -2,38 +2,37 @@
 #include <GL/glut.h>
 
 #include <vector>
+#include <iostream>
 
-#include "SocketInterface.h"
+// #include "SocketInterface.h"
 
 #include "SimpleOptions.hpp"
 #include "UdpSocket.hpp"
+#include "TcpSocket.hpp"
 #include "TcpServerSocket.hpp"
 
-SocketInterface * debugSocket = 0;
+#include "memory_allocation_data.h"
+
+// SocketInterface * debugSocket = 0;
+TcpServerSocket * serverSocket = 0;
+TcpSocket * eventSocket[3] = {0};
+UdpSocket * updateSocket = 0;
 
 static bool debug_alloc = false;
 
 #pragma pack(push, 1)
-struct MemData {
-    uint16_t sequence;
-    char type;
-    unsigned int address;
-    unsigned int size;
-    char label[32];
-};
-
 struct MemoryBlock {
-    MemoryBlock(const std::string & label, unsigned int s, unsigned int e)
+    MemoryBlock(const std::string & label, uint32_t s, uint32_t e)
         : label(label)
         , start(s)
         , end(e)
         , count(1)
     {}
     std::string label;
-    unsigned int start;
-    unsigned int end;
-    unsigned int dStart;
-    unsigned int dEnd;
+    uint32_t start;
+    uint32_t end;
+    uint32_t dStart;
+    uint32_t dEnd;
     int count;
 };
 #pragma pack(pop)
@@ -110,36 +109,55 @@ void debug_dump(const char *label, MemoryBlock * mb) {
     );
 }
 
-void update_memory_map(MemData & data) {
-    // Update limits
-    const unsigned int mem_start = data.address;
-    const unsigned int mem_end = data.address + data.size - 1;
-    const std::string mem_label = std::string(data.label);
+void handle_info_message(std::string message) {
+    // TODO
+    std::cout << "INFO[" << message << "]\n";
+}
 
-    if (data.type != 'c') {
+void handle_periodic_message(uint16_t id, std::string label) {
+    // TODO
+    std::cout << "REGISTER(" << id << ") : [" << label << "]\n";
+}
+
+void process_info_data(MemoryInfoData * data) {
+    if (data->header.subTypeId == md_INFO) {
+        handle_info_message(std::string(data->message));
+    }
+    else if (data->header.subTypeId == md_REGISTER) {
+        handle_periodic_message(data->id, std::string(data->message));
+    }
+}
+
+void process_allocation_data(MemoryAllocationData * data) {
+    if (data->header.subTypeId == md_RESET) {
+        reset_memory_map();
+    }
+    else {
+        const uint32_t mem_start = data->address;
+        const uint32_t mem_end = data->address + data->size - 1;
+        const std::string mem_label = std::string(data->label);
+
         update_memory_span(mem_start, mem_end);
         update_display_positions();
-    }
 
-    MemoryBlock * block = 0;
-    block = find_memory_block(mem_start, mem_end);
-    if (data.type == 'a') {
-        if (block != 0) {
-            ++(block->count);
-            if (debug_alloc) {
-                debug_dump("inc", block);
+        MemoryBlock * block = 0;
+        block = find_memory_block(mem_start, mem_end);
+        if (data->header.subTypeId == md_ALLOCATE) {
+            if (block != 0) {
+                ++(block->count);
+                if (debug_alloc) {
+                    debug_dump("inc", block);
+                }
+            }
+            else {
+                block = new MemoryBlock(mem_label, mem_start, mem_end);
+                memory_map_.push_back(block);
+                if (debug_alloc) {
+                    debug_dump("add", block);
+                }
             }
         }
-        else {
-            block = new MemoryBlock(mem_label, mem_start, mem_end);
-            memory_map_.push_back(block);
-            if (debug_alloc) {
-                debug_dump("add", block);
-            }
-        }
-    }
-    else if (data.type == 'r') {
-        if (block != 0) {
+        else if (data->header.subTypeId == md_RELEASE) {
             --(block->count);
             if (debug_alloc) {
                 debug_dump("dec", block);
@@ -157,9 +175,6 @@ void update_memory_map(MemData & data) {
             }
             debug_dump(mem_label.c_str(), block);
         }
-    }
-    else if (data.type == 'c') {
-        reset_memory_map();
     }
 }
 
@@ -227,21 +242,39 @@ void key(unsigned char key, int x, int y) {
     }
 }
 
+MemoryPeriodicData updateData;
+uint8_t buffer[64];
+void process_event_data() {
+    MemoryDataHeader * pHeader = (MemoryDataHeader *)buffer;
+
+    if (pHeader->typeId == md_ALLOCATION) {
+        MemoryAllocationData * pAllocation = (MemoryAllocationData *)buffer;
+        process_allocation_data(pAllocation);
+    }
+    else if (pHeader->typeId == md_INFO) {
+        MemoryInfoData * pInfo = (MemoryInfoData *)buffer;
+        process_info_data(pInfo);
+    }
+}
 void idle() {
-    MemData data;
-    try {
-        if (debugSocket->Read(&data, sizeof(MemData)) > 0) {
-            if (last_sequence_ + 1 != data.sequence) {
-                printf("Missing package (%04x)\n", data.sequence);
+    for (int i=0; i<3; ++i) {
+        if (eventSocket[i] != 0) {
+            if (eventSocket[i]->Read(buffer, 64) > 0) {
+                process_event_data();
             }
-            last_sequence_ = data.sequence;
-            // printf("%s %c\n", data.label, data.type);
-            update_memory_map(data);
+            else {
+                delete eventSocket[i];
+                eventSocket[i] = 0;
+            }
+        }
+        else {
+            SOCKET sock;
+            if (serverSocket->Accept(sock)) {
+                eventSocket[i] = new TcpSocket(sock);
+            }
         }
     }
-    catch (std::string & eMsg) {
-        printf("Error: %s\n", eMsg.c_str());
-    }
+    updateSocket->Read((void *)&updateData, sizeof(MemoryPeriodicData));
 }
 
 void reshape(int w, int h) {
@@ -255,24 +288,26 @@ void reshape(int w, int h) {
 int main(int argc, char** argv)
 {
     SimpleOptions opts(argc, argv);
-    bool use_udp = true;
     if (opts.hasOption("-d")) {
         debug_alloc = true;
     }
-    if (opts.hasOption("-tcp")) {
-        use_udp = false;
-    }
 
-    if (use_udp) {
-        debugSocket = new UdpSocket();
-    }
-    else {
-        debugSocket = new TcpServerSocket();
-    }
+    for (int i=0; i<3; ++i) eventSocket[i] = 0;
+    updateSocket = new UdpSocket();
+    serverSocket = new TcpServerSocket();
+
+    // if (use_udp) {
+    //     debugSocket = new UdpSocket();
+    // }
+    // else {
+    //     debugSocket = new TcpServerSocket();
+    // }
 
     puts("Initializing socket...");
     try {
-        debugSocket->Init(2401);
+        // debugSocket->Init(2401);
+        updateSocket->Init(2501);
+        serverSocket->Init(2401);
     }
     catch (std::string eMsg) {
         printf("ERROR: %s\n", eMsg.c_str());

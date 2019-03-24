@@ -7,6 +7,7 @@ CXXFLAGS =-g
 CXXFLAGS += -std=c++11
 CXXFLAGS += -Wall -Wextra -Werror -Wfatal-errors
 
+CXXFLAGS += -I../library
 CXXFLAGS += -I$(EXT_LIB_DIR)/freeglut/include
 
 CXXLIBS   =

@@ -1,15 +1,21 @@
 #include "memory_debugger.h"
 
 #include "memory_allocation_data.h"
+#include "memory_debugger.h"
 
 #include <windows.h>
 #include <ws2tcpip.h>
 #include <string.h>
 #include <memory.h>
+#include <stdint.h>
 
+#define MEMDBG_IP_ADDRESS_STRLEN 16
+
+#define MEMDBG_DEFAULT_ADDRESS "127.0.0.1"
 #define MEMDBG_DEFAULT_CONNECT_PORT 2401
 #define MEMDBG_DEFAULT_PERIODIC_PORT 2501
 
+static char memdbg_client_address_[MEMDBG_IP_ADDRESS_STRLEN] = MEMDBG_DEFAULT_ADDRESS;
 static int memdbg_connect_port_ = MEMDBG_DEFAULT_CONNECT_PORT;
 
 // Allocation / Release
@@ -42,22 +48,26 @@ static int memdbg_ready = 0;
 
 #define MEMDBG_CHECK_READY if (memdbg_ready == 0) { memdbg_init(); }
 
-void memdbg_init();
-void memdbg_send_alloc();
+
 int memdbg_init_wsa();
 int memdbg_connect(SOCKET * ptr_sock);
 int memdbg_init_periodic();
+void memdbg_send_alloc();
 void memdbg_send_release();
 void memdbg_send_info();
 void memdbg_send_periodic();
 
-void memdbg_set_ports(int p_connect, int p_periodic) {
-    if (p_connect != -1) {
-        memdbg_connect_port_ = p_connect;
+void memdbg_set_ports(int connect_port, int periodic_port) {
+    if (connect_port != -1) {
+        memdbg_connect_port_ = connect_port;
     }
-    if (p_periodic != -1) {
-        memdbg_periodic_port_ = p_periodic;
+    if (periodic_port != -1) {
+        memdbg_periodic_port_ = periodic_port;
     }
+}
+
+void memdbg_set_address(const char * client_address) {
+    strncpy(memdbg_client_address_, client_address, MEMDBG_IP_ADDRESS_STRLEN);
 }
 
 void memdbg_reset() {
@@ -130,7 +140,7 @@ int memdbg_connect(SOCKET * ptr_sock) {
 
     memdbg_remote_host_.sin_family = AF_INET;
     memdbg_remote_host_.sin_port = htons(memdbg_connect_port_);
-    memdbg_remote_host_.sin_addr.s_addr = inet_addr("127.0.0.1");
+    memdbg_remote_host_.sin_addr.s_addr = inet_addr(memdbg_client_address_);
 
     int rv = connect(*ptr_sock, (SOCKADDR *)&memdbg_remote_host_, sizeof(memdbg_remote_host_));
     if (rv == SOCKET_ERROR) {
@@ -151,7 +161,7 @@ int memdbg_init_periodic() {
 
     memdbg_remote_host_.sin_family = AF_INET;
     memdbg_remote_host_.sin_port = htons(memdbg_periodic_port_);
-    memdbg_remote_host_.sin_addr.s_addr = inet_addr("127.0.0.1");
+    memdbg_remote_host_.sin_addr.s_addr = inet_addr(memdbg_client_address_);
 
     return 0;
 }
@@ -164,7 +174,7 @@ void memdbg_allocate(const char * label, void * address, unsigned int size) {
     memdbg_alloc_data_.header.typeId = md_ALLOCATION;
     memdbg_alloc_data_.header.subTypeId = md_ALLOCATE;
     memdbg_alloc_data_.header.threadId = GetCurrentThreadId();
-    memdbg_alloc_data_.address = (unsigned int) address;
+    memdbg_alloc_data_.address = (uint32_t) address;
     memdbg_alloc_data_.size = size;
     strncpy(memdbg_alloc_data_.label, label, MEMDBG_LABEL_SIZE);
     memdbg_send_alloc();
@@ -179,7 +189,7 @@ void memdbg_release(const char * label, void * address, unsigned int size) {
     memdbg_release_data_.header.typeId = md_ALLOCATION;
     memdbg_release_data_.header.subTypeId = md_RELEASE;
     memdbg_release_data_.header.threadId = GetCurrentThreadId();
-    memdbg_release_data_.address = (unsigned int) address;
+    memdbg_release_data_.address = (uint32_t) address;
     memdbg_release_data_.size = size;
     strncpy(memdbg_release_data_.label, label, MEMDBG_LABEL_SIZE);
     memdbg_send_release();
@@ -200,7 +210,7 @@ void memdbg_info(const char * message) {
     LeaveCriticalSection(&memdbg_info_lock_);
 }
 
-void memdbg_register_periodic(unsigned short id, const char * name) {
+void memdbg_register_periodic(uint16_t id, const char * name) {
 
     MEMDBG_CHECK_READY;
 
@@ -214,7 +224,7 @@ void memdbg_register_periodic(unsigned short id, const char * name) {
     LeaveCriticalSection(&memdbg_info_lock_);
 }
 
-void memdbg_update_periodic(unsigned short id, int typeId, void * value_ptr, int size) {
+void memdbg_update_periodic(uint16_t id, int typeId, void * value_ptr, int size) {
 
     MEMDBG_CHECK_READY;
 
@@ -228,6 +238,8 @@ void memdbg_update_periodic(unsigned short id, int typeId, void * value_ptr, int
     memdbg_send_periodic();
     LeaveCriticalSection(&memdbg_periodic_lock_);
 }
+
+
 
 void memdbg_send_alloc() {
     memdbg_alloc_data_.header.sequenceNo = memdbg_alloc_seq_;

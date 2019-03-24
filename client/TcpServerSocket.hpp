@@ -1,23 +1,14 @@
 #ifndef TCP_SERVER_SOCKET_HPP_
 #define TCP_SERVER_SOCKET_HPP_
 
-#include "SocketInterface.h"
+#include <winsock2.h>
 
-#define DEBUG_IT
-
-class TcpServerSocket : public SocketInterface {
-private:
-    enum {
-        eListening,
-        eReading,
-    };
+class TcpServerSocket {
 public:
     TcpServerSocket() {}
     ~TcpServerSocket() {}
     void Init(int port) {
         // defaults
-        connected_ = false;
-        sock_ = INVALID_SOCKET;
         listen_sock_ = INVALID_SOCKET;
 
         // initialize WinSock2
@@ -46,67 +37,21 @@ public:
             throw std::string("Unable to enable non-blocking i/o!");
         }
 
-        // Number of allowed connections is '1'.
-        rv = listen(listen_sock_, 1);
+        // Number of allowed connections is '3'.
+        rv = listen(listen_sock_, 3);
         if (rv == SOCKET_ERROR) {
             throw std::string("Unable to listen socket!");
         }
-
-        state_ = eListening;
     }
-    int Read(void * buffer, int size) {
-        int rxBytes = -1;
-        if (state_ == eReading) {
-            if (connected_) {
-                rxBytes = recv(sock_, (char *)buffer, size, 0);
-                if (rxBytes < 0) {
-                    int eCode = WSAGetLastError();
-                    if (eCode != 10035 &&
-                            eCode != 10054) {
-                        std::string eMsg = "Error (" + std::to_string(eCode) + ") during receive!";
-                        throw eMsg;
-                    }
-                    else if (eCode == 10054) {
-                        connected_ = false;
-                        state_ = eListening;
-                    }
-                }
-                else if (rxBytes == 0) {
-                    // disconnection.
-                    connected_ = false;
-                    state_ = eListening;
-                }
-            }
-            else {
-                throw std::string("Unabled to read when not connected!");
-            }
+    bool Accept(SOCKET & socket) {
+        socket = accept(listen_sock_, NULL, NULL);
+        if (socket == INVALID_SOCKET) {
+            return false;
         }
-        else if (state_ == eListening) {
-            sock_ = accept(listen_sock_, NULL, NULL);
-            // if (sock_ == INVALID_SOCKET) {
-            //      throw std::string("Unable to accept socket!");
-            // }
-            if (sock_ != INVALID_SOCKET) {
-                unsigned long nonBlocking = 1;
-                if (ioctlsocket(sock_, FIONBIO, &nonBlocking) == SOCKET_ERROR) {
-                    throw std::string("Unable to enable non-blocking i/o!");
-                }
-
-#ifdef DEBUG_IT
-                puts("Client connected!");
-#endif
-
-                state_ = eReading;
-                connected_ = true;
-            }
-        }
-        return rxBytes;
+        return true;
     }
 
 private:
-    bool connected_;
-    int state_;
-    SOCKET sock_;
     SOCKET listen_sock_;
 };
 

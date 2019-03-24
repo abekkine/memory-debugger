@@ -5,9 +5,7 @@
 
 #include <winsock2.h>
 
-#include "SocketInterface.h"
-
-class UdpSocket : public SocketInterface {
+class UdpSocket {
 public:
     UdpSocket() {
 
